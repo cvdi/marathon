@@ -8,6 +8,7 @@ import akka.pattern.ask
 import mesosphere.marathon.MarathonSchedulerActor.ScaleApp
 import mesosphere.marathon.api.LeaderInfo
 import mesosphere.marathon.api.v2.json.V2AppUpdate
+import mesosphere.marathon.core.launchqueue.LaunchQueue
 import mesosphere.marathon.event.{
   LocalLeadershipEvent,
   AppTerminatedEvent,
@@ -16,11 +17,11 @@ import mesosphere.marathon.event.{
 }
 import mesosphere.marathon.health.HealthCheckManager
 import mesosphere.marathon.state._
-import mesosphere.marathon.tasks.{ TaskQueue, TaskTracker }
+import mesosphere.marathon.tasks.TaskTracker
 import mesosphere.marathon.upgrade.DeploymentManager._
 import mesosphere.marathon.upgrade.{ DeploymentManager, DeploymentPlan, TaskKillActor }
 import mesosphere.mesos.protos
-import org.apache.mesos.Protos.{ TaskID, TaskState, TaskStatus }
+import org.apache.mesos.Protos.{ SlaveID, TaskID, TaskState, TaskStatus }
 import org.apache.mesos.SchedulerDriver
 import org.slf4j.LoggerFactory
 
@@ -41,7 +42,7 @@ class MarathonSchedulerActor private (
     deploymentRepository: DeploymentRepository,
     healthCheckManager: HealthCheckManager,
     taskTracker: TaskTracker,
-    taskQueue: TaskQueue,
+    taskQueue: LaunchQueue,
     marathonSchedulerDriverHolder: MarathonSchedulerDriverHolder,
     leaderInfo: LeaderInfo,
     eventBus: EventStream,
@@ -309,7 +310,7 @@ object MarathonSchedulerActor {
     deploymentRepository: DeploymentRepository,
     healthCheckManager: HealthCheckManager,
     taskTracker: TaskTracker,
-    taskQueue: TaskQueue,
+    taskQueue: LaunchQueue,
     marathonSchedulerDriverHolder: MarathonSchedulerDriverHolder,
     leaderInfo: LeaderInfo,
     eventBus: EventStream,
@@ -388,7 +389,7 @@ class SchedulerActions(
     appRepository: AppRepository,
     healthCheckManager: HealthCheckManager,
     taskTracker: TaskTracker,
-    taskQueue: TaskQueue,
+    taskQueue: LaunchQueue,
     eventBus: EventStream,
     val schedulerActor: ActorRef,
     config: MarathonConf)(implicit ec: ExecutionContext) {
@@ -423,7 +424,7 @@ class SchedulerActions(
       }
       taskQueue.purge(app.id)
       taskTracker.shutdown(app.id)
-      taskQueue.rateLimiter.resetDelay(app)
+      taskQueue.resetDelay(app)
       // TODO after all tasks have been killed we should remove the app from taskTracker
 
       eventBus.publish(AppTerminatedEvent(app.id))
@@ -555,6 +556,7 @@ class SchedulerActions(
         val updatedApp = appUpdate(currentVersion)
 
         taskQueue.purge(id)
+        taskQueue.resetDelay(currentVersion)
 
         appRepository.store(updatedApp).map { _ =>
           update(driver, updatedApp, appUpdate)

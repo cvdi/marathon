@@ -14,7 +14,7 @@ import com.google.common.util.concurrent.{ AbstractIdleService, Service }
 import mesosphere.chaos.http.{ HttpService, HttpConf, HttpModule }
 import mesosphere.chaos.metrics.MetricsModule
 import java.io.{ Closeable, File }
-import java.util.concurrent.{ Executor, TimeUnit }
+import java.util.concurrent.{ Executors, Executor, TimeUnit }
 import org.apache.log4j.Logger
 import scala.concurrent.{ ExecutionContext, Future, duration, Await, Promise }
 import scala.concurrent.duration._
@@ -111,7 +111,7 @@ object ProcessKeeper {
       }
       log.info(s"Process $name finished with exit code $exitCode")
       ProcessExited
-    }(ExecutionContext.global)
+    }(ExecutionContext.fromExecutor(Executors.newCachedThreadPool()))
     val upOrExited = Future.firstCompletedOf(Seq(up.future, processExitCode))(ExecutionContext.global)
     Try(Await.result(upOrExited, timeout)) match {
       case Success(result) =>
