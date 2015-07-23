@@ -128,7 +128,7 @@ EOF
 }
 
 function apps {
-  (until curl -sSfLk -m 10 -H 'Accept: text/plain' "${1%/}"/v2/tasks; do [ $# -lt 2 ] && return 1 || shift; done) | while read -r txt
+  (until curl -sSfLk -m 10 -H 'Accept: text/plain' "${@%/}"/v2/tasks; do [ $# -lt 2 ] && return 1 || shift; done) | while read -r txt
   do
     set -- $txt
     if [ $# -lt 2 ]; then
