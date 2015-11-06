@@ -115,8 +115,8 @@ defaults
   retries             3
   maxconn          2000
   timeout connect  5000
-  timeout client  50000
-  timeout server  50000
+  timeout client 600000
+  timeout server 600000
 
 listen stats
   bind 127.0.0.1:9090
