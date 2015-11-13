@@ -34,7 +34,7 @@ cronjob_conf_file=/etc/"$name"/marathons
 cronjob=/etc/cron.d/"$name"
 script_path=/usr/local/bin/"$name"
 conf_file=haproxy.cfg
-web_app_prefix=/ # default string "/" is not allowed for mesos id
+web_app_prefix=/ # default string "/" doesn't exist in mesos task id
 
 function main {
   config "$@"
