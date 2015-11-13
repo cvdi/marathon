@@ -34,6 +34,7 @@ cronjob_conf_file=/etc/"$name"/marathons
 cronjob=/etc/cron.d/"$name"
 script_path=/usr/local/bin/"$name"
 conf_file=haproxy.cfg
+web_app_prefix=/ # default string "/" is not allowed for mesos id
 
 function main {
   config "$@"
@@ -129,7 +130,14 @@ EOF
 }
 
 function apps {
-  (until curl -sSfLk -m 10 -H 'Accept: text/plain' "${@%/}"/v2/tasks; do [ $# -lt 2 ] && return 1 || shift; done) | while read -r txt
+  local web_apps_exist=false
+  local web_frontend_http="
+frontend $web_app_prefix-80
+  bind 0.0.0.0:80
+  mode http
+"
+  local mesos_tasks="$(until curl -sSfLk -m 10 -H 'Accept: text/plain' "${@%/}"/v2/tasks; do [ $# -lt 2 ] && return 1 || shift; done)"
+  while read -r txt
   do
     set -- $txt
     if [ $# -lt 2 ]; then
@@ -143,7 +151,26 @@ function apps {
 
     if [ ! -z "${app_port##*[!0-9]*}" ]
     then
-      cat <<EOF
+      if [[ "$app_name" =~ "$web_app_prefix" ]]
+      then
+        web_apps_exist=true
+        if [ "$app_port" = "80" ] ; then
+          web_frontend_http+="  default_backend $app_name-$app_port
+"
+        fi
+        local tmp=${app_name#*$web_app_prefix}
+        local url_path=${tmp%$web_app_prefix*}
+        web_frontend_http+="  acl has_$url_path path_beg -i /$url_path/
+  use_backend $app_name-$app_port if has_$url_path
+"
+        cat <<EOF
+
+backend $app_name-$app_port
+  mode http
+  reqrep ^([^\ ]*)\ /$url_path/(.*) \1\ /\2
+EOF
+      else
+        cat <<EOF
 
 listen $app_name-$app_port
   bind 0.0.0.0:$app_port
@@ -151,13 +178,19 @@ listen $app_name-$app_port
   option tcplog
   balance leastconn
 EOF
+      fi
       while [[ $# -ne 0 ]]
       do
         out "  server ${app_name}-$# $1 check"
         shift
       done
     fi
-  done
+  done <<< "$(echo "$mesos_tasks")"
+  if $web_apps_exist ; then
+    cat <<EOF
+$web_frontend_http
+EOF
+  fi
 }
 
 function logged {
