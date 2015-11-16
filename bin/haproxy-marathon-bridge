@@ -35,6 +35,7 @@ cronjob=/etc/cron.d/"$name"
 script_path=/usr/local/bin/"$name"
 conf_file=haproxy.cfg
 web_app_prefix=/ # default string "/" doesn't exist in mesos task id
+ssl_cert_path=
 
 function main {
   config "$@"
@@ -132,8 +133,13 @@ EOF
 function apps {
   local web_apps_exist=false
   local web_frontend_http="
-frontend $web_app_prefix-80
+frontend $web_app_prefix-http
   bind 0.0.0.0:80
+  mode http
+"
+  local web_frontend_https="
+frontend $web_app_prefix-https
+  bind 0.0.0.0:443 ssl crt $ssl_cert_path
   mode http
 "
   local mesos_tasks="$(until curl -sSfLk -m 10 -H 'Accept: text/plain' "${@%/}"/v2/tasks; do [ $# -lt 2 ] && return 1 || shift; done)"
@@ -155,20 +161,29 @@ frontend $web_app_prefix-80
       then
         web_apps_exist=true
         if [ "$app_port" = "80" ] ; then
-          web_frontend_http+="  default_backend $app_name-$app_port
+          local default_backend="  default_backend $app_name-$app_port
 "
+          web_frontend_http+=$default_backend
+          web_frontend_https+=$default_backend
         fi
         local tmp=${app_name#*$web_app_prefix}
         local url_path=${tmp%$web_app_prefix*}
-        web_frontend_http+="  acl has_$url_path path_beg -i /$url_path/
+        local acl="  acl has_$url_path path_beg -i /$url_path/
   use_backend $app_name-$app_port if has_$url_path
 "
+        web_frontend_http+=$acl
+        web_frontend_https+=$acl
         cat <<EOF
 
 backend $app_name-$app_port
   mode http
   reqrep ^([^\ ]*)\ /$url_path/(.*) \1\ /\2
 EOF
+        if [[ ! -z "$ssl_cert_path" ]] ; then
+          cat <<EOF
+  redirect scheme https if !{ ssl_fc }
+EOF
+        fi
       else
         cat <<EOF
 
@@ -190,6 +205,11 @@ EOF
     cat <<EOF
 $web_frontend_http
 EOF
+    if [[ ! -z "$ssl_cert_path" ]] ; then
+      cat <<EOF
+$web_frontend_https
+EOF
+    fi
   fi
 }
 
